@@ -91,16 +91,52 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          double steer_value = j[1]["steering_angle"];
+          double throttle_value = j[1]["throttle"];
+          
+          // *** Preprocess state to rotate to align with map and add required latency ***
+          
+          for (int i = 0; i < ptsx.size(); i++ ) {
+            // Rotate the car reference angle to 90 degrees
+            double xRotated = ptsx[i] - px;
+            double yRotated = ptsy[i] - py;
+            ptsx[i] = (xRotated * cos(0 - psi) - yRotated * sin(0 - psi));
+            ptsy[i] = (xRotated * sin(0 - psi) + yRotated * cos(0 - psi));
+          }
+          
+          double* ptrX = &ptsx[0];
+          double* ptrY = &ptsy[0];
+          
+          Eigen::Map<Eigen::VectorXd> ptsx_transform(ptrX, 6);
+          Eigen::Map<Eigen::VectorXd> ptsy_transform(ptrY, 6);
+          
+          auto coeffs = polyfit(ptsx_transform, ptsy_transform, 3);
+          
+          // Caculate cross track error (CTE) and error psi (epsi) (difference between our angle and what we want)
+          double cte = polyeval(coeffs, 0);
+          double epsi = -atan(coeffs[1]);
+          
+          // Add latency of 100 milliseconds
+          double latency = 0.1;
+          // See comment in MPC.cpp about how this value was obtained.
+          double Lf = 2.67;
+          double latency_x = v * latency;
+          double latency_y = 0;
+          double latency_v = v + throttle_value * latency;
+          double latency_psi = -v * steer_value / Lf * latency;
+          double latency_cte = cte + v * sin(epsi) * latency;
+          double latency_epsi = epsi - v * steer_value / Lf * latency;
+          
+          
+          Eigen::VectorXd state(6);
+          state << latency_x, latency_y, latency_psi, latency_v, latency_cte, latency_epsi;
+          
+          // Calculate steering angle and throttle using MPC.  Both are in between [-1, 1].
+          auto vars = mpc.Solve(state, coeffs);
 
-          /*
-          * TODO: Calculate steering angle and throttle using MPC.
-          *
-          * Both are in between [-1, 1].
-          *
-          */
-          double steer_value;
-          double throttle_value;
-
+          steer_value = vars[0];
+          throttle_value = vars[1];
+          
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
@@ -113,6 +149,14 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
+          for (int i = 2; i < vars.size(); i++)
+          {
+            if(i % 2 == 0) {
+              mpc_x_vals.push_back(vars[i]);
+            } else {
+              mpc_y_vals.push_back(vars[i]);
+            }
+          }
 
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
@@ -123,6 +167,13 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
+          double poly_inc = 2.5;
+          int num_points = 25;
+          for (int i = 1; i < num_points; i++) {
+            next_x_vals.push_back(poly_inc * i);
+            next_y_vals.push_back(polyeval(coeffs, poly_inc * i));
+          }
+          
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
@@ -166,12 +217,14 @@ int main() {
 
   h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
     std::cout << "Connected!!!" << std::endl;
+    (void)h; // Silences "Unused variable" warning
   });
 
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
                          char *message, size_t length) {
     ws.close();
     std::cout << "Disconnected" << std::endl;
+    (void)h; // Silences "Unused variable" warning
   });
 
   int port = 4567;
