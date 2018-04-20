@@ -1,5 +1,53 @@
 # CarND-Controls-MPC
 Self-Driving Car Engineer Nanodegree Program
+___
+
+## The Model
+
+This project implements a kinematic model....
+
+### Vehicle State
+    * x    x position
+    * y    y position
+    * ψ    orientation angle
+    * v    velocity
+### Control inputs (actuators)
+    * δ    steering angle
+    * a    throttle (positive) and brakes (negative) between 1 and -1
+
+### Model update equations (to predict next state based on actuator values)
+    * x = x + v * cos(psi) * dt     (dt is delta time)
+    * y = y + v * sin(psi) * dt
+    * ψ  = ψ  + (v / Lf) * δ  * dt   (Lf measures size of vehicle (distance between center of mass and front axle))
+    * v = v + a * dt
+
+## Timestep Length and Elapsed Duration (N & dt)
+
+The timestep and elapsed duration were chosen through trial and error.  A timestep of 1 second (with 10 steps (N=10) and delta time of .1 (dt=.1)) was selectected because I attempted to find the longest timestep that maintained good control, and when I incrested much more, the car would crash.  The values could potentially be further refined with additional testing, but this combination produced acceptable results and allowed the car to successfully navigate the track.
+
+## Polynomial Fitting and MPC Preprocessing
+
+Waypoints were fitted to a third degree polynomial.  The following preprocessing steps were completed...
+    1. The car was shifted to (0,0) and reference angle was rotated to 0 to corespond to the map
+    2. The cross track error (CTE) and error psi (epsi) (difference between our angle and what we want) were computed.
+    3. Latency was factored in (see the following section for a detailed description of this step).
+
+## Model Predictive Control with Latency
+
+During preprocessing, latency of 0.1 seconds (100 milliseconds) was factored in by applying the following...
+
+    * latency = 0.1 (set latency to 100 milliseconds)
+    * Lf = 2.67
+    * latency_x = v * latency;
+    * latency_y = 0;
+    * latency_v = v + throttle_value * latency;
+    * latency_psi = -v * steer_value / Lf * latency;
+    * latency_cte = cte + v * sin(epsi) * latency;
+    * latency_epsi = epsi - v * steer_value / Lf * latency;
+
+Note: Lf (the length from front to CoG that has a similar radius) was provided, but is obtained by measuring the radius formed by running the vehicle in the simulator around in a circle with a constant steering angle and velocity on flat terrain.
+
+Lf was tuned until the the radius formed by the simulating the model presented in the classroom matched the previous radius.
 
 ---
 
